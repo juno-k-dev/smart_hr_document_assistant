@@ -37,15 +37,23 @@ cd smart_hr_document_assistant
 
 ### 2. Install Dependencies
 ```bash
-pip install streamlit langchain langchain-community langchain-core chromadb pypdf langchain-google-genai unstructured python-docx python-dotenv
+pip install -r requirements.txt
 ```
 
 ### 3. Set Up Environment Variables
 
-Create a `.env` file in the project root:
+For local development, create a `.env` file in the project root:
 ```
 GEMINI_API_KEY=your-gemini-api-key-here
 ```
+
+For Streamlit deployment, add the API key to `st.secrets` in your Streamlit dashboard or `secrets.toml`:
+```
+[GEMINI]
+GEMINI_API_KEY = "your-gemini-api-key-here"
+```
+
+Then use the Streamlit app's secret manager to populate `GEMINI_API_KEY`.
 
 Get your API key from [Google AI Studio](https://aistudio.google.com/app/apikey)
 
@@ -156,9 +164,10 @@ graph TB
 ```
 smart_hr_document_assistant/
 ├── app.py                                    # Streamlit web application
+├── requirements.txt                          # Python dependencies
 ├── smart_hr_document_assistant.ipynb        # Jupyter notebook (proof-of-concept)
 ├── README.md                                # This file
-├── .env                                     # Environment variables (create this)
+├── .env                                     # Environment variables (for local use)
 ├── db/                                      # Vector database (auto-created)
 ```
 
@@ -209,7 +218,7 @@ The system employs two critical optimization techniques to minimize API costs an
 - **Performance Gain**: 95% faster query performance after initial indexing
 - **Cost Savings**: Eliminates 100% of embedding API calls after first processing
 
-### API Rate Limiting Mitigation
+### 3. API Rate Limiting Mitigation
 
 **Problem**: Google Gemini API enforces rate limits on embedding and generation requests.
 
