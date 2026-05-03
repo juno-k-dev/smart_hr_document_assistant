@@ -4,6 +4,8 @@ A professional RAG (Retrieval-Augmented Generation) application for intelligent 
 
 ## Overview
 
+Link: https://smart-hr-document-assistant-5kgyptobvu9vh6koq4h46a.streamlit.app/
+
 **Smart HR Document Assistant** is a web-based application that enables employees to search and query HR policy documents using natural language. The system uses AI-powered retrieval to find relevant information and generates accurate answers with citations to source documents.
 
 This project includes:
