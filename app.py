@@ -1,5 +1,6 @@
 import streamlit as st
 import os
+import shutil
 from dotenv import load_dotenv
 
 from langchain_community.document_loaders import PyPDFLoader, UnstructuredWordDocumentLoader
@@ -78,8 +79,35 @@ st.markdown("---")
 
 # --- LOAD ENV ---
 
-load_dotenv()
-api_key = st.secrets.get("GEMINI_API_KEY") or os.getenv("GEMINI_API_KEY")
+
+def get_api_key():
+    load_dotenv()
+
+    api_key = None
+    try:
+        if "GEMINI_API_KEY" in st.secrets:
+            api_key = st.secrets["GEMINI_API_KEY"]
+        elif "GEMINI" in st.secrets and "GEMINI_API_KEY" in st.secrets["GEMINI"]:
+            api_key = st.secrets["GEMINI"]["GEMINI_API_KEY"]
+    except Exception:
+        api_key = None
+
+    # Fall back to local .env for development.
+    return api_key or os.getenv("GEMINI_API_KEY")
+
+api_key = get_api_key()
+
+if not api_key:
+    st.error(
+        "Missing GEMINI_API_KEY. Add it to Streamlit secrets or .env and reload the app."
+    )
+    st.stop()
+
+with st.sidebar:
+    if st.button("Reset Vector DB"):
+        shutil.rmtree("db", ignore_errors=True)
+        load_vector_db.clear()
+        st.success("✅ Vector database cleared. Re-upload files to rebuild it.")
 
 # --- FILE UPLOAD SECTION ---
 
@@ -111,13 +139,21 @@ def load_documents(files):
         with open(file_path, "wb") as f:
             f.write(file.getbuffer())
         
+        if file.size > 10 * 1024 * 1024:
+            st.warning(f"{file.name} is larger than 10MB and may be skipped.")
+            continue
+
         if file.name.endswith(".pdf"):
             loader = PyPDFLoader(file_path)
         else:
             loader = UnstructuredWordDocumentLoader(file_path)
-        
-        docs = loader.load()
-        
+
+        try:
+            docs = loader.load()
+        except Exception as e:
+            st.warning(f"Skipping {file.name}: {e}")
+            continue
+
         for doc in docs:
             doc.metadata["source"] = file.name
             doc.metadata["page"] = doc.metadata.get("page", "N/A")
@@ -126,44 +162,74 @@ def load_documents(files):
     
     return documents
 
-# --- MAIN ---
-
-if api_key and uploaded_files:
-    embeddings = GoogleGenerativeAIEmbeddings(
+@st.cache_resource
+def get_embeddings(api_key):
+    return GoogleGenerativeAIEmbeddings(
         model="models/gemini-embedding-001",
         google_api_key=api_key
     )
-    
-    # ✅ Load existing DB if exists
-    if os.path.exists("db"):
-        vector_db = Chroma(
-            persist_directory="db",
-            embedding_function=embeddings
-        )
-        with st.container():
-            col1, col2 = st.columns([3, 1])
-            with col1:
-                st.info("✅ Using existing vector database")
-            with col2:
-                st.caption("No re-indexing needed")
-    else:
+
+@st.cache_resource
+def load_vector_db(api_key, persist_directory: str):
+    embeddings = get_embeddings(api_key)
+    return Chroma(
+        persist_directory=persist_directory,
+        embedding_function=embeddings
+    )
+
+@st.cache_resource
+def get_llm(api_key):
+    return ChatGoogleGenerativeAI(
+        model="gemini-2.5-flash",
+        temperature=0,
+        google_api_key=api_key
+    )
+
+# --- MAIN ---
+
+if api_key and uploaded_files:
+    db_path = "db"
+    embeddings = get_embeddings(api_key)
+    llm = get_llm(api_key)
+    vector_db = None
+
+    if os.path.exists(db_path):
+        try:
+            vector_db = load_vector_db(api_key, db_path)
+            with st.container():
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    st.info("✅ Using existing vector database")
+                with col2:
+                    st.caption("No re-indexing needed")
+        except Exception:
+            st.warning(
+                "Existing vector database could not be loaded and will be rebuilt."
+            )
+            shutil.rmtree(db_path, ignore_errors=True)
+            load_vector_db.clear()
+            vector_db = None
+
+    if vector_db is None:
         with st.spinner("🔄 Processing documents..."):
             docs = load_documents(uploaded_files)
-            
+            if not docs:
+                st.warning("No valid documents were loaded.")
+                st.stop()
+
             splitter = RecursiveCharacterTextSplitter(
                 chunk_size=1500,
                 chunk_overlap=100
             )
             chunks = splitter.split_documents(docs)
-            
+
             vector_db = Chroma.from_documents(
                 documents=chunks,
                 embedding=embeddings,
-                persist_directory="db"
+                persist_directory=db_path
             )
-            
             vector_db.persist()
-            
+
         col1, col2, col3 = st.columns(3)
         with col1:
             st.metric("Documents", len(uploaded_files))
@@ -171,17 +237,11 @@ if api_key and uploaded_files:
             st.metric("Pages/Chunks", len(chunks))
         with col3:
             st.metric("Status", "Ready")
-        
+
         st.success("✅ Documents indexed successfully!")
-    
+
     retriever = vector_db.as_retriever(search_kwargs={"k": 3})
 
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-2.5-flash",
-        temperature=0,
-        google_api_key=api_key
-    )
-    
     prompt = ChatPromptTemplate.from_template("""You are a professional HR policy assistant designed to provide accurate, factual information from organizational documents.
 
 INSTRUCTIONS:

@@ -21,6 +21,10 @@ This project includes:
 - **Relevance Detection** - Returns "Not found in provided documents" for out-of-context queries
 - **Performance Optimization** - Intelligent chunk sizing and vector database caching for reduced API costs
 
+## Screenshot/ Demo
+
+![Demo screenshot](image.png)
+
 ## Requirements
 
 - Python 3.8+

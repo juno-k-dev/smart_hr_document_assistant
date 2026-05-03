@@ -9,3 +9,4 @@ chromadb
 pypdf
 python-docx
 unstructured
+protobuf<5
